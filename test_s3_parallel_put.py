@@ -23,40 +23,67 @@ class PutterTest(unittest.TestCase):
         cls.connection_patch = mock.patch.object(s3_parallel_put, 'S3Connection')
         mock_connection = cls.connection_patch.start()
         mock_connection.return_value.get_bucket.return_value = 'mock-bucket'
+        # A dummy stat queue to dump things into
+        cls.stat_queue = s3_parallel_put.JoinableQueue()
 
     @classmethod
     def tearDownClass(cls):
         cls.connection_patch.stop()
 
-    def mock_put(self, bucket, key_name, value):
-        print bucket, key_name
-        self.last_key_put = mock.MagicMock()
-        return self.last_key_put
-
-    # DELETEME just testing that I can test
-    def test_i_can_run_this_thing_trivial(self):
-        put_queue = mock.MagicMock()
-        put_queue.get.return_value = None
-        stat_queue = s3_parallel_put.JoinableQueue()
-        s3_parallel_put.putter(self.mock_put, put_queue, stat_queue, object)
-
-    def test_mock_queues(self):
-        put_queue = mock.MagicMock()
-        put_queue.get.side_effect = [
+    def setUp(self):
+        self.put_queue = mock.MagicMock()
+        self.put_queue.get.side_effect = [
             ('key_name', {'content': 'boo'}),
             None,  # cause while loop to break
         ]
-        stat_queue = s3_parallel_put.JoinableQueue()
+
+    def mock_put(self, bucket, key_name, value):
+        """Helper to test that `putter` puts things the way we expect."""
+        print bucket, key_name  # DELETEME
+        self.last_key_put = mock.MagicMock()
+        return self.last_key_put
+
+    def test_no_gzip_option_means_no_gzip_content(self):
         options = mock.MagicMock(
             dry_run=False,
             content_type=False,
             gzip=False,
         )
-        s3_parallel_put.putter(self.mock_put, put_queue, stat_queue, options)
+        s3_parallel_put.putter(self.mock_put, self.put_queue, self.stat_queue, options)
         args, kwargs = self.last_key_put.set_contents_from_string.call_args
         # sanity check
         self.assertEqual(args[0], 'boo')
         headers = args[1]
+        self.assertNotIn('Content-Encoding', headers)
+
+    def test_gzip_option_with_zippable_content_means_gzip_content(self):
+        options = mock.MagicMock(
+            dry_run=False,
+            content_type='text/html',
+            gzip=True,
+        )
+        # sanity check
+        self.assertIn(options.content_type, s3_parallel_put.GZIP_CONTENT_TYPES)
+        s3_parallel_put.putter(self.mock_put, self.put_queue, self.stat_queue, options)
+        args, kwargs = self.last_key_put.set_contents_from_string.call_args
+        # assert that the content changed
+        self.assertNotEqual(args[0], 'boo')
+        headers = args[1]
+        self.assertEqual(headers['Content-Type'], options.content_type)
+        self.assertEqual(headers['Content-Encoding'], 'gzip')
+
+    def test_gzip_option_with_unzippable_content_means_normal_content(self):
+        options = mock.MagicMock(
+            dry_run=False,
+            content_type='unicorn/candy',
+            gzip=True,
+        )
+        s3_parallel_put.putter(self.mock_put, self.put_queue, self.stat_queue, options)
+        args, kwargs = self.last_key_put.set_contents_from_string.call_args
+        # assert that the content did not get compressed
+        self.assertEqual(args[0], 'boo')
+        headers = args[1]
+        self.assertEqual(headers['Content-Type'], options.content_type)
         self.assertNotIn('Content-Encoding', headers)
 
 
