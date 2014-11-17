@@ -61,6 +61,7 @@ class PutterTest(unittest.TestCase):
             dry_run=False,
             content_type='text/html',
             gzip=True,
+            gzip_type=['guess'],
         )
         # sanity check
         self.assertIn(options.content_type, s3_parallel_put.GZIP_CONTENT_TYPES)
@@ -77,6 +78,7 @@ class PutterTest(unittest.TestCase):
             dry_run=False,
             content_type='unicorn/candy',
             gzip=True,
+            gzip_type=['guess'],
         )
         s3_parallel_put.putter(self.mock_put, self.put_queue, self.stat_queue, options)
         args, kwargs = self.last_key_put.set_contents_from_string.call_args
