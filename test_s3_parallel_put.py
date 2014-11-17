@@ -56,6 +56,22 @@ class PutterTest(unittest.TestCase):
         headers = args[1]
         self.assertNotIn('Content-Encoding', headers)
 
+    def test_gzip_option_can_gzip_everything(self):
+        # --gzip --gzip-type=all
+        options = mock.MagicMock(
+            dry_run=False,  # to get mocked 'put' to do work
+            content_type='binary/thingy',  # a content type not normally gzipped
+            gzip=True,  # enable gzip support
+            gzip_type=['all'],  # force gzipping all
+        )
+        s3_parallel_put.putter(self.mock_put, self.put_queue, self.stat_queue, options)
+        args, kwargs = self.last_key_put.set_contents_from_string.call_args
+        # assert that gzip changed the content
+        self.assertNotEqual(args[0], 'boo')
+        headers = args[1]
+        self.assertEqual(headers['Content-Type'], options.content_type)
+        self.assertEqual(headers['Content-Encoding'], 'gzip')
+
     def test_gzip_option_with_zippable_content_means_gzip_content(self):
         options = mock.MagicMock(
             dry_run=False,
