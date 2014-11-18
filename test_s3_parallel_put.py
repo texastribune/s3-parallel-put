@@ -109,6 +109,45 @@ class PutterTest(unittest.TestCase):
         self.assertEqual(headers['Content-Type'], options.content_type)
         self.assertNotIn('Content-Encoding', headers)
 
+    def test_gzip_option_handles_unknown_content_type(self):
+        """--content-type=guess --gzip --gzip-type=guess"""
+        self.put_queue.get.side_effect = [
+            ('key_name', {'path': '/file.xenu', 'content': 'poo'}),
+            None,  # cause while loop to break
+        ]
+        options = mock.MagicMock(
+            dry_run=False,  # to get mocked 'put' to do work
+            content_type='guess',
+            gzip=True,
+            gzip_type=['guess'],
+        )
+        s3_parallel_put.putter(self.mock_put, self.put_queue, self.stat_queue, options)
+        args, kwargs = self.last_key_put.set_contents_from_string.call_args
+        self.assertEqual(args[0], 'poo')
+        headers = args[1]
+        self.assertEqual(headers['Content-Type'], None)
+        self.assertNotIn('Content-Encoding', headers)
+
+    def test_gzip_all_option_handles_unknown_content_type(self):
+        """--content-type=guess --gzip --gzip-type=guess"""
+        self.put_queue.get.side_effect = [
+            ('key_name', {'path': '/file.xenu', 'content': 'poo'}),
+            None,  # cause while loop to break
+        ]
+        options = mock.MagicMock(
+            dry_run=False,  # to get mocked 'put' to do work
+            content_type='guess',
+            gzip=True,
+            gzip_type=['all'],
+        )
+        s3_parallel_put.putter(self.mock_put, self.put_queue, self.stat_queue, options)
+        args, kwargs = self.last_key_put.set_contents_from_string.call_args
+        # assert that gzip changed the content
+        self.assertNotEqual(args[0], 'poo')
+        headers = args[1]
+        self.assertEqual(headers['Content-Type'], None)
+        self.assertEqual(headers['Content-Encoding'], 'gzip')
+
     def test_gzip_option_and_guessed_type_and_explicit_type_finds_usual(self):
         """--gzip --gzip-type=guess --gzip-type="foo/bar" """
         options = mock.MagicMock(
